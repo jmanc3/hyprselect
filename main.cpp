@@ -17,23 +17,13 @@
 
 #include <algorithm>
 
-// ----------------------------------------------------------------------
-// CUSTOM COLOR AND ROUNDING CONFIGURATION
-// ----------------------------------------------------------------------
-
-// 1. Define your custom color using 0-255 integer values (e.g., #DCD7BA)
-#define SELECTION_R 0
-#define SELECTION_G 120
-#define SELECTION_B 214
-
-// 2. Define if rounding should be disabled (true = sharp borders, false = rounded)
-// Setting to 'false' enables rounding.
-const bool SELECTION_NO_ROUNDING = false; 
-
-// 3. Macro to convert 0-255 ints to a normalized CHyprColor object
+// --- COLOR AND ROUNDING CONFIGURATION START ---
+#define SELECTION_R 220 // 0-255 RGB for #DCD7BA
+#define SELECTION_G 215 
+#define SELECTION_B 186 
+const bool SELECTION_NO_ROUNDING = false; // true = sharp, false = rounded
 #define CHyprColorRGB(r, g, b, a) CHyprColor((float)r/255.f, (float)g/255.f, (float)b/255.f, a)
-
-// ----------------------------------------------------------------------
+// --- COLOR AND ROUNDING CONFIGURATION END ---
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -141,7 +131,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                         supressDropShadow = val;
                 }
                 
-                // Use rounding for shadow unless explicitly disabled
+                // Use rounding for shadow unless SELECTION_NO_ROUNDING is true
                 float shadowRounding = SELECTION_NO_ROUNDING ? 0.0f : rounding;
                 
                 drawDropShadow(m, 1.0, {0, 0, 0, 0.15f * supressDropShadow}, shadowRounding, roundingPower, selectionBox, 7 * m->m_scale, 1.0, false);
@@ -155,15 +145,17 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 auto borderSize = std::floor(1.1f * m->m_scale);
                 if (borderSize < 1.0)
                     borderSize = 1.0;
-                
+                // If we don't apply m_scale to rounding here, it'll not match drawRect, even though drawRect shouldn't be applying m_scale, somewhere in the pipeline, it clearly does (annoying inconsistancy)
                 borderBox.expand(-borderSize * .7);
                 borderBox.round();
                 
                 // Use new color macro for border. Alpha set to 1.0
                 float borderRounding = SELECTION_NO_ROUNDING ? 0.0f : rounding * m->m_scale;
 
-                // The logic for drawing the border is now unified and conditional
+                // drawBorder(borderBox, {0, .47, .84, 1.0}, borderSize, rounding * m->m_scale, 2.0f, false, 1.0f);
+                // No border radius use the above code for border radius
                 drawBorder(borderBox, CHyprColorRGB(SELECTION_R, SELECTION_G, SELECTION_B, 1.0f), borderSize, borderRounding, 2.0f, false, 1.0f);
+                //drawBorder(borderBox, **PBORDERCOL, borderSize, rounding * m->m_scale, 2.0f, false, 1.0f);
             }
         }
     });
@@ -332,4 +324,3 @@ void drawDropShadow(PHLMONITOR pMonitor, float const& a, CHyprColor b, float ROU
     });
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
-
