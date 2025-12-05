@@ -39,7 +39,7 @@ plugin:hyprselect:should_round = false
 plugin:hyprselect:col.main = rgba(0085e625)
 plugin:hyprselect:col.border = rgba(0085e6ff)
 
-plugin:hyprselect:fade_time_ms = 100.0
+plugin:hyprselect:fade_time_ms = 65.0
 
 plugin:hyprselect:border_size = -1.0  # negative number means automatic
 plugin:hyprselect:rounding = 6

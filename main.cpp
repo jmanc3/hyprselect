@@ -7,6 +7,7 @@
 #define WLR_USE_UNSTABLE
 
 #include <any>
+#include <chrono>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
 #include <hyprland/src/devices/IPointer.hpp>
@@ -15,8 +16,6 @@
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
-
-#include <algorithm>
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -102,6 +101,66 @@ CBox fixForRender(PHLMONITOR m, CBox box) {
     return box;
 }
 
+static long get_current_time_in_ms() {
+    using namespace std::chrono;
+    milliseconds currentTime = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+    return currentTime.count();
+}
+
+void drawSelectionBox(CBox selectionBox, float alpha) {
+	static const auto c_should_round = ConfigValue<Hyprlang::INT>("plugin:hyprselect:should_round");
+	static const auto c_col_main = ConfigValue<Hyprlang::INT>("plugin:hyprselect:col.main");
+	static const auto c_col_border = ConfigValue<Hyprlang::INT>("plugin:hyprselect:col.border");
+	static const auto c_rounding = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:rounding");
+	static const auto c_rounding_power = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:rounding_power");
+	static const auto c_border_size = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:border_size");
+
+    // rendering requires the raw coords to be relative to the monitor and scaled by the monitor scale
+    auto m = g_pHyprOpenGL->m_renderData.pMonitor.lock();
+
+    float rounding = *c_rounding * m->m_scale;
+    float roundingPower = *c_rounding_power;
+    if (!*c_should_round) {
+        rounding = 0.0;
+        roundingPower = 2.0f;
+    }
+
+    float supressDropShadow = 1.0f;
+    float thresholdForShowingDropShadow = 40.0f * m->m_scale;
+    
+    if (selectionBox.h < thresholdForShowingDropShadow)
+        supressDropShadow = ((float) (selectionBox.h)) / thresholdForShowingDropShadow;
+    if (selectionBox.w < thresholdForShowingDropShadow) {
+        auto val = ((float) (selectionBox.w)) / thresholdForShowingDropShadow;
+        if (val < supressDropShadow)
+            supressDropShadow = val;
+    }
+    auto bbb = selectionBox;
+    bbb.expand(1.0); 
+    drawDropShadow(m, 1.0, {0, 0, 0, 0.12f * supressDropShadow * alpha}, rounding, roundingPower, bbb, 7 * m->m_scale, false);
+
+    CHyprColor mainCol = *c_col_main;
+    mainCol.a *= alpha;
+    drawRect(selectionBox, mainCol, rounding, roundingPower, false, 1.0f);
+
+    auto borderBox = selectionBox;
+    auto borderSize = std::floor(1.1f * m->m_scale);
+    if (borderSize < 1.0)
+        borderSize = 1.0;
+    // If we don't apply m_scale to rounding here, it'll not match drawRect, even though drawRect shouldn't be applying m_scale, somewhere in the pipeline, it clearly does (annoying inconsistancy)
+    if (*c_border_size >= 0.0)  { 
+        borderSize = *c_border_size;
+        borderBox = selectionBox;
+    }
+    borderBox.expand(-borderSize);
+    borderBox.round();
+    if (*c_border_size != 0.0) {
+        CHyprColor borderCol = *c_col_border;
+        borderCol.a *= alpha;
+        drawBorder(borderBox, borderCol, borderSize, rounding, roundingPower, false, 1.0f);
+    }
+}
+
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     PHANDLE = handle;
 
@@ -112,10 +171,18 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:border_size", Hyprlang::CConfigValue((Hyprlang::FLOAT) -1.0));
     HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:rounding", Hyprlang::CConfigValue((Hyprlang::FLOAT) 6.0));
     HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:rounding_power", Hyprlang::CConfigValue((Hyprlang::FLOAT) 2.0));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:fade_time_ms", Hyprlang::CConfigValue((Hyprlang::FLOAT) 200.0));
+    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:fade_time_ms", Hyprlang::CConfigValue((Hyprlang::FLOAT) 65.0));
 
     static bool drawSelection = false;
     static Vector2D mouseAtStart;
+
+    struct FadingBox {
+        long creation_time = 0;
+        CBox box;
+        bool done = false;
+    };
+
+    static std::vector<FadingBox> fadingBoxes;
 
     static auto mouseButton = HyprlandAPI::registerCallbackDynamic(PHANDLE, "mouseButton", [](void* self, SCallbackInfo& info, std::any data) {
         auto e = std::any_cast<IPointer::SButtonEvent>(data);
@@ -129,6 +196,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 }
             } else { // released
                 drawSelection = false;
+                FadingBox fbox;
+                fbox.box = rect(mouseAtStart, mouse);
+                fbox.creation_time = get_current_time_in_ms();
+                fadingBoxes.push_back(fbox);
+                    
                 for (auto m : g_pCompositor->m_monitors)
                     g_pHyprRenderer->damageMonitor(m);
             }
@@ -155,56 +227,34 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         auto stage = std::any_cast<eRenderStage>(data);
         if (stage == eRenderStage::RENDER_POST_WALLPAPER) {
             if (drawSelection) {
-            	static const auto c_should_round = ConfigValue<Hyprlang::INT>("plugin:hyprselect:should_round");
-            	static const auto c_col_main = ConfigValue<Hyprlang::INT>("plugin:hyprselect:col.main");
-            	static const auto c_col_border = ConfigValue<Hyprlang::INT>("plugin:hyprselect:col.border");
-            	static const auto c_rounding = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:rounding");
-            	static const auto c_rounding_power = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:rounding_power");
-            	static const auto c_border_size = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:border_size");
-
                 auto mouse = g_pInputManager->getMouseCoordsInternal();
                 auto selectionBox = rect(mouseAtStart, mouse);
-
-                // rendering requires the raw coords to be relative to the monitor and scaled by the monitor scale
                 auto m = g_pHyprOpenGL->m_renderData.pMonitor.lock();
-                selectionBox = fixForRender(m, selectionBox);
+                drawSelectionBox(fixForRender(m, selectionBox), 1.0);
+            }
+
+            if (!fadingBoxes.empty()) {
+            	static const auto c_fade_length = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:fade_time_ms");
                 
-                float rounding = *c_rounding * m->m_scale;
-                float roundingPower = *c_rounding_power;
-                if (!*c_should_round) {
-                    rounding = 0.0;
-                    roundingPower = 2.0f;
+                for (auto &fbox : fadingBoxes) {
+                    float dt = (float) (get_current_time_in_ms() - fbox.creation_time);  
+                    float scalar = dt / *c_fade_length;
+                    if (scalar > 1.0) {
+                        fbox.done = true;
+                        scalar = 1.0;
+                    }
+                    auto m = g_pHyprOpenGL->m_renderData.pMonitor.lock();
+                    drawSelectionBox(fixForRender(m, fbox.box), 1.0 - scalar);
+                    
+                    auto area = fbox.box;
+                    area.expand(10 * m->m_scale);
+                    g_pHyprRenderer->damageBox(area);
                 }
 
-                float supressDropShadow = 1.0f;
-                float thresholdForShowingDropShadow = 40.0f * m->m_scale;
-                
-                if (selectionBox.h < thresholdForShowingDropShadow)
-                    supressDropShadow = ((float) (selectionBox.h)) / thresholdForShowingDropShadow;
-                if (selectionBox.w < thresholdForShowingDropShadow) {
-                    auto val = ((float) (selectionBox.w)) / thresholdForShowingDropShadow;
-                    if (val < supressDropShadow)
-                        supressDropShadow = val;
-                }
-                auto bbb = selectionBox;
-                bbb.expand(1.0); 
-                drawDropShadow(m, 1.0, {0, 0, 0, 0.12f * supressDropShadow}, rounding, roundingPower, bbb, 7 * m->m_scale, false);
-                
-                drawRect(selectionBox, *c_col_main, rounding, roundingPower, false, 1.0f);
-
-                auto borderBox = selectionBox;
-                auto borderSize = std::floor(1.1f * m->m_scale);
-                if (borderSize < 1.0)
-                    borderSize = 1.0;
-                // If we don't apply m_scale to rounding here, it'll not match drawRect, even though drawRect shouldn't be applying m_scale, somewhere in the pipeline, it clearly does (annoying inconsistancy)
-                if (*c_border_size >= 0.0)  { 
-                    borderSize = *c_border_size;
-                    borderBox = selectionBox;
-                }
-                borderBox.expand(-borderSize);
-                borderBox.round();
-                if (*c_border_size != 0.0) {
-                    drawBorder(borderBox, *c_col_border, borderSize, rounding, roundingPower, false, 1.0f);
+                for (int i = fadingBoxes.size() - 1; i >= 0; i--) {
+                    if (fadingBoxes[i].done) {
+                        fadingBoxes.erase(fadingBoxes.begin() + i);
+                    }
                 }
             }
         }
