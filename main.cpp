@@ -17,6 +17,14 @@
 
 #include <algorithm>
 
+// --- COLOR AND ROUNDING CONFIGURATION START ---
+#define SELECTION_R 220 // 0-255 RGB for #DCD7BA
+#define SELECTION_G 215 
+#define SELECTION_B 186 
+const bool SELECTION_NO_ROUNDING = false; // true = sharp, false = rounded
+#define CHyprColorRGB(r, g, b, a) CHyprColor((float)r/255.f, (float)g/255.f, (float)b/255.f, a)
+// --- COLOR AND ROUNDING CONFIGURATION END ---
+
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
@@ -122,9 +130,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                     if (val < supressDropShadow)
                         supressDropShadow = val;
                 }
-                drawDropShadow(m, 1.0, {0, 0, 0, 0.15f * supressDropShadow}, rounding, roundingPower, selectionBox, 7 * m->m_scale, 1.0, false);
                 
-                drawRect(selectionBox, {0, .47, .84, 0.25}, rounding, roundingPower, false, 1.0f);
+                // Use rounding for shadow unless SELECTION_NO_ROUNDING is true
+                float shadowRounding = SELECTION_NO_ROUNDING ? 0.0f : rounding;
+                
+                drawDropShadow(m, 1.0, {0, 0, 0, 0.15f * supressDropShadow}, shadowRounding, roundingPower, selectionBox, 7 * m->m_scale, 1.0, false);
+                
+                // Use new color macro for fill. Alpha set to 0.25
+                float rectRounding = SELECTION_NO_ROUNDING ? 0.0f : rounding;
+                drawRect(selectionBox, CHyprColorRGB(SELECTION_R, SELECTION_G, SELECTION_B, 0.25f), rectRounding, roundingPower, false, 1.0f);
                 //drawRect(selectionBox, **PMAINCOL, rounding, roundingPower, false, 1.0f);
 
                 auto borderBox = selectionBox;
@@ -134,7 +148,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 // If we don't apply m_scale to rounding here, it'll not match drawRect, even though drawRect shouldn't be applying m_scale, somewhere in the pipeline, it clearly does (annoying inconsistancy)
                 borderBox.expand(-borderSize * .7);
                 borderBox.round();
-                drawBorder(borderBox, {0, .47, .84, 1.0}, borderSize, rounding * m->m_scale, 2.0f, false, 1.0f);
+                
+                // Use new color macro for border. Alpha set to 1.0
+                float borderRounding = SELECTION_NO_ROUNDING ? 0.0f : rounding * m->m_scale;
+
+                // drawBorder(borderBox, {0, .47, .84, 1.0}, borderSize, rounding * m->m_scale, 2.0f, false, 1.0f);
+                // No border radius use the above code for border radius
+                drawBorder(borderBox, CHyprColorRGB(SELECTION_R, SELECTION_G, SELECTION_B, 1.0f), borderSize, borderRounding, 2.0f, false, 1.0f);
                 //drawBorder(borderBox, **PBORDERCOL, borderSize, rounding * m->m_scale, 2.0f, false, 1.0f);
             }
         }
@@ -160,7 +180,7 @@ public:
     AnyData* m_data = nullptr;
 
     AnyPass(const AnyData& data) {
-        m_data       = new AnyData;
+        m_data        = new AnyData;
         m_data->draw = data.draw;
     }
     virtual ~AnyPass() {
@@ -213,12 +233,12 @@ void drawBorder(CBox box, CHyprColor color, float size, float round, float round
     if (box.h <= 0 || box.w <= 0)
         return;
     CBorderPassElement::SBorderData rectdata;
-    rectdata.grad1         = CHyprColor(color.r, color.g, color.b, color.a);
-    rectdata.grad2         = CHyprColor(color.r, color.g, color.b, color.a);
-    rectdata.box           = box;
-    rectdata.round         = round;
-    rectdata.outerRound    = round;
-    rectdata.borderSize    = size;
+    rectdata.grad1           = CHyprColor(color.r, color.g, color.b, color.a);
+    rectdata.grad2           = CHyprColor(color.r, color.g, color.b, color.a);
+    rectdata.box             = box;
+    rectdata.round           = round;
+    rectdata.outerRound      = round;
+    rectdata.borderSize      = size;
     rectdata.roundingPower = roundingPower;
     g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(rectdata));
 }
@@ -304,6 +324,3 @@ void drawDropShadow(PHLMONITOR pMonitor, float const& a, CHyprColor b, float ROU
     });
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
-
-
-
