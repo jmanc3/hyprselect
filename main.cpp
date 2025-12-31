@@ -197,7 +197,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             if (e.state) { 
                 bool intersected = false; 
                 { // against clients
-                    auto intersectedWindow = g_pCompositor->vectorToWindowUnified(mouse, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING);
+                    auto intersectedWindow = g_pCompositor->vectorToWindowUnified(mouse, Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING);
                     if (intersectedWindow)
                         intersected = true;
                     }
