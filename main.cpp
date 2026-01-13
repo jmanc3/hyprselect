@@ -206,8 +206,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                         Vector2D surfaceCoords;
                         PHLLS pFoundLayerSurface;
                         auto foundSurface = g_pCompositor->vectorToLayerSurface(mouse, &lsl, &surfaceCoords, &pFoundLayerSurface, false);
-                        if (foundSurface)
-                            intersected = true;
+                        if (foundSurface) {
+                            // Ignore wallpaper layers so desktop drag works with hyprpaper.
+                            if (!pFoundLayerSurface || pFoundLayerSurface->m_namespace != "hyprpaper")
+                                intersected = true;
+                        }
                     }
                 }
                 { // against popups
@@ -456,6 +459,5 @@ void drawDropShadow(PHLMONITOR pMonitor, float const& a, CHyprColor b, float ROU
     });
     g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
-
 
 
