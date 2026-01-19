@@ -207,9 +207,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                         PHLLS pFoundLayerSurface;
                         auto foundSurface = g_pCompositor->vectorToLayerSurface(mouse, &lsl, &surfaceCoords, &pFoundLayerSurface, false);
                         if (foundSurface) {
+                            {
+                                // Guesstimate by the size of the layer if it's wallpaper
+                                CBox box = foundSurface->extends();
+                                if (!(std::abs(box.w - m->m_size.x) < 30 && std::abs(box.h - m->m_size.y) < 30)) {
+                                    intersected = true;
+                                }
+                            }
                             // Ignore wallpaper layers so desktop drag works with hyprpaper.
-                            if (!pFoundLayerSurface || pFoundLayerSurface->m_namespace != "hyprpaper")
-                                intersected = true;
+                            //if (!pFoundLayerSurface || pFoundLayerSurface->m_namespace != "hyprpaper")
+                                //intersected = true;
                         }
                     }
                 }
