@@ -16,6 +16,7 @@
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
+#include <hyprland/src/event/EventBus.hpp>
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -188,8 +189,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     static std::vector<FadingBox> fadingBoxes;
 
-    static auto mouseButton = HyprlandAPI::registerCallbackDynamic(PHANDLE, "mouseButton", [](void* self, SCallbackInfo& info, std::any data) {
-        auto e = std::any_cast<IPointer::SButtonEvent>(data);
+    static auto mouseButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo &info) {
         auto mouse = g_pInputManager->getMouseCoordsInternal();
         auto m = g_pCompositor->getMonitorFromCursor();
         
@@ -249,7 +249,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         }
     });
 
-    static auto mouseMove = HyprlandAPI::registerCallbackDynamic(PHANDLE, "mouseMove", [](void* self, SCallbackInfo& info, std::any data) {
+    static auto mouseMove = Event::bus()->m_events.input.mouse.move.listen([](Vector2D event, Event::SCallbackInfo &info) {
         if (drawSelection) {
             auto mouse = g_pInputManager->getMouseCoordsInternal();
             auto selectionBox = rect(mouseAtStart, mouse);
@@ -265,8 +265,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         }
     });
 
-    static auto render = HyprlandAPI::registerCallbackDynamic(PHANDLE, "render", [](void* self, SCallbackInfo& info, std::any data) {
-        auto stage = std::any_cast<eRenderStage>(data);
+    static auto render = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) {
         if (stage == eRenderStage::RENDER_POST_WALLPAPER) {
             if (drawSelection) {
                 auto mouse = g_pInputManager->getMouseCoordsInternal();
