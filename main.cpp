@@ -354,8 +354,6 @@ void drawRect(CBox box, CHyprColor color, float round, float roundingPower, bool
         return;
     AnyPass::AnyData anydata([box, color, round, roundingPower, blur, blurA](AnyPass* pass) {
         CHyprOpenGLImpl::SRectRenderData rectdata;
-        auto region = new CRegion(box);
-        rectdata.damage = region;
         rectdata.blur = blur;
         rectdata.blurA = blurA;
         rectdata.round = round;
