@@ -17,7 +17,7 @@ That should create `hyprselect.so`.
 To auto start it with Hyprland, add the following to `$HOME/.config/hypr/hyprland.lua
 
 ```lua
-hl.exec_cmd("sleep 3s; hyprctl plugin load /home/jmanc3/Projects/hyprselect/hyprselect.so")
+hl.exec_cmd("sleep 3s; hyprctl plugin load /full/qualified/path/to/hyprselect.so")
 ```
 
 ## Manual starting
