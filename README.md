@@ -14,10 +14,10 @@ make
 
 That should create `hyprselect.so`.
 
-To auto start it with Hyprland, add the following to `$HOME/.config/hypr/hyprland.conf`
+To auto start it with Hyprland, add the following to `$HOME/.config/hypr/hyprland.lua
 
-```bash
-exec-once = hyprctl plugin load /full/qualified/path/to/hyprselect.so
+```lua
+hl.exec_cmd("sleep 3s; hyprctl plugin load /home/jmanc3/Projects/hyprselect/hyprselect.so")
 ```
 
 ## Manual starting
@@ -34,18 +34,27 @@ And unload it with:
 
 If you want to customize, you can add the following to `$HOME/.config/hypr/hyprland.conf`
 
-```ini
-plugin:hyprselect:should_round = false
-plugin:hyprselect:col.main = rgba(0085e625)
-plugin:hyprselect:col.border = rgba(0085e6ff)
+```lua
+hl.config({
+    plugin = {
+        hyprselect = {
+            should_round = false,
 
-plugin:hyprselect:fade_time_ms = 65.0
+            col = {
+                main   = "rgba(0085e625)",
+                border = "rgba(0085e6ff)",
+            },
 
-plugin:hyprselect:should_blur = false
-plugin:hyprselect:blur_power = 1.0 # range: 0.0 -> 1.0
+            fade_time_ms = 65.0,
 
-plugin:hyprselect:border_size = -1.0  # negative number means automatic
-plugin:hyprselect:rounding = 6
-plugin:hyprselect:rounding_power = 2.0
+            should_blur = false,
+            blur_power = 1.0,  -- range: 0.0 -> 1.0
+
+            border_size = -1.0,  -- negative number means automatic
+            rounding = 6,
+            rounding_power = 2.0,
+        }
+    }
+})
 ```
 

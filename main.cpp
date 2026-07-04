@@ -17,6 +17,7 @@
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
 #include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/config/values/ConfigValues.hpp>
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -25,50 +26,19 @@ APICALL EXPORT std::string PLUGIN_API_VERSION() {
 
 void drawRect(CBox box, CHyprColor color, float round, float roundingPower, bool blur, float blurA);
 void drawBorder(CBox box, CHyprColor color, float size, float round, float roundingPower, bool blur, float blurA);
-void drawDropShadow(PHLMONITOR pMonitor, float const& a, CHyprColor b, float ROUNDINGBASE, float ROUNDINGPOWER, CBox fullBox, int range, bool sharp); 
+void drawDropShadow(PHLMONITOR pMonitor, float const& a, CHyprColor b, float ROUNDINGBASE, float ROUNDINGPOWER, CBox fullBox, int range, bool sharp);
 
 static void *PHANDLE = nullptr;
 
-class HyprlangUnspecifiedCustomType {};
-
-// abandon hope all ye who enter here
-template <typename T, typename V = HyprlangUnspecifiedCustomType>
-class ConfigValue {
-public:
-	ConfigValue(const std::string& option) {
-		this->static_data_ptr = HyprlandAPI::getConfigValue(PHANDLE, option)->getDataStaticPtr();
-	}
-
-	template <typename U = T>
-	typename std::enable_if<std::is_same<U, Hyprlang::CUSTOMTYPE>::value, const V&>::type
-	operator*() const {
-		return *(V*) ((Hyprlang::CUSTOMTYPE*) *this->static_data_ptr)->getData();
-	}
-
-	template <typename U = T>
-	typename std::enable_if<std::is_same<U, Hyprlang::CUSTOMTYPE>::value, const V*>::type
-	operator->() const {
-		return &**this;
-	}
-
-	// Bullshit microptimization case for strings
-	template <typename U = T>
-	typename std::enable_if<std::is_same<U, Hyprlang::STRING>::value, const char*>::type
-	operator*() const {
-		return *(const char**) this->static_data_ptr;
-	}
-
-	template <typename U = T>
-	typename std::enable_if<
-	    !std::is_same<U, Hyprlang::CUSTOMTYPE>::value && !std::is_same<U, Hyprlang::STRING>::value,
-	    const T&>::type
-	operator*() const {
-		return *(T*) *this->static_data_ptr;
-	}
-
-private:
-	void* const* static_data_ptr;
-};
+static SP<Config::Values::CBoolValue>  g_pShouldRound;
+static SP<Config::Values::CColorValue> g_pColMain;
+static SP<Config::Values::CColorValue> g_pColBorder;
+static SP<Config::Values::CBoolValue>  g_pShouldBlur;
+static SP<Config::Values::CFloatValue> g_pBlurPower;
+static SP<Config::Values::CFloatValue> g_pBorderSize;
+static SP<Config::Values::CFloatValue> g_pRounding;
+static SP<Config::Values::CFloatValue> g_pRoundingPower;
+static SP<Config::Values::CFloatValue> g_pFadeTime;
 
 // Always make box start from top left point
 CBox rect(Vector2D start, Vector2D current) {
@@ -110,21 +80,12 @@ static long get_current_time_in_ms() {
 
 void drawSelectionBox(CBox selectionBox, float alpha) {
 
-    static const auto c_should_round = ConfigValue<Hyprlang::INT>("plugin:hyprselect:should_round");
-    static const auto c_col_main = ConfigValue<Hyprlang::INT>("plugin:hyprselect:col.main");
-    static const auto c_col_border = ConfigValue<Hyprlang::INT>("plugin:hyprselect:col.border");
-    static const auto c_should_blur = ConfigValue<Hyprlang::INT>("plugin:hyprselect:should_blur");
-    static const auto c_blur_power = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:blur_power");
-    static const auto c_rounding = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:rounding");
-    static const auto c_rounding_power = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:rounding_power");
-    static const auto c_border_size = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:border_size");
-
     // rendering requires the raw coords to be relative to the monitor and scaled by the monitor scale
     auto m = g_pHyprRenderer->m_renderData.pMonitor.lock();
 
-    float rounding = *c_rounding * m->m_scale;
-    float roundingPower = *c_rounding_power;
-    if (!*c_should_round) {
+    float rounding = g_pRounding->value() * m->m_scale;
+    float roundingPower = g_pRoundingPower->value();
+    if (!g_pShouldRound->value()) {
         rounding = 0.0;
         roundingPower = 2.0f;
     }
@@ -143,23 +104,23 @@ void drawSelectionBox(CBox selectionBox, float alpha) {
     bbb.expand(1.0); 
     drawDropShadow(m, 1.0, {0, 0, 0, 0.12f * supressDropShadow * alpha}, rounding, roundingPower, bbb, 7 * m->m_scale, false);
 
-    CHyprColor mainCol = *c_col_main;
+    CHyprColor mainCol = (uint64_t) g_pColMain->value();
     mainCol.a *= alpha;
-    drawRect(selectionBox, mainCol, rounding, roundingPower, *c_should_blur, sqrt(*c_blur_power * alpha));
+    drawRect(selectionBox, mainCol, rounding, roundingPower, g_pShouldBlur->value(), sqrt(g_pBlurPower->value() * alpha));
 
     auto borderBox = selectionBox;
     auto borderSize = std::floor(1.1f * m->m_scale);
     if (borderSize < 1.0)
         borderSize = 1.0;
     // If we don't apply m_scale to rounding here, it'll not match drawRect, even though drawRect shouldn't be applying m_scale, somewhere in the pipeline, it clearly does (annoying inconsistancy)
-    if (*c_border_size >= 0.0)  { 
-        borderSize = *c_border_size;
+    if (g_pBorderSize->value() >= 0.0)  {
+        borderSize = g_pBorderSize->value();
         borderBox = selectionBox;
     }
     borderBox.expand(-borderSize);
     borderBox.round();
-    if (*c_border_size != 0.0) {
-        CHyprColor borderCol = *c_col_border;
+    if (g_pBorderSize->value() != 0.0) {
+        CHyprColor borderCol = (uint64_t) g_pColBorder->value();
         borderCol.a *= alpha;
         drawBorder(borderBox, borderCol, borderSize, rounding, roundingPower, false, 1.0f);
     }
@@ -168,16 +129,27 @@ void drawSelectionBox(CBox selectionBox, float alpha) {
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     PHANDLE = handle;
 
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:should_round", Hyprlang::CConfigValue((Hyprlang::INT) 0));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:col.main", Hyprlang::CConfigValue((Hyprlang::INT) CHyprColor(0, .52, .9, 0.25).getAsHex()));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:col.border", Hyprlang::CConfigValue((Hyprlang::INT) CHyprColor(0, .52, .9, 1.0).getAsHex()));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:should_blur", Hyprlang::CConfigValue((Hyprlang::INT) 0.0));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:blur_power", Hyprlang::CConfigValue((Hyprlang::FLOAT) 1.0));
-    
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:border_size", Hyprlang::CConfigValue((Hyprlang::FLOAT) -1.0));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:rounding", Hyprlang::CConfigValue((Hyprlang::FLOAT) 6.0));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:rounding_power", Hyprlang::CConfigValue((Hyprlang::FLOAT) 2.0));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprselect:fade_time_ms", Hyprlang::CConfigValue((Hyprlang::FLOAT) 65.0));
+    using namespace Config::Values;
+
+    g_pShouldRound   = makeShared<CBoolValue>("plugin:hyprselect:should_round", "Whether the selection box has rounded corners", (Config::BOOL) false);
+    g_pColMain       = makeShared<CColorValue>("plugin:hyprselect:col.main", "Fill color of the selection box", (Config::INTEGER) CHyprColor(0, .52, .9, 0.25).getAsHex());
+    g_pColBorder     = makeShared<CColorValue>("plugin:hyprselect:col.border", "Border color of the selection box", (Config::INTEGER) CHyprColor(0, .52, .9, 1.0).getAsHex());
+    g_pShouldBlur    = makeShared<CBoolValue>("plugin:hyprselect:should_blur", "Whether the selection box fill is blurred", (Config::BOOL) false);
+    g_pBlurPower     = makeShared<CFloatValue>("plugin:hyprselect:blur_power", "Strength of the selection box blur", (Config::FLOAT) 1.0);
+    g_pBorderSize    = makeShared<CFloatValue>("plugin:hyprselect:border_size", "Border thickness (-1 = auto, 0 = no border)", (Config::FLOAT) -1.0);
+    g_pRounding      = makeShared<CFloatValue>("plugin:hyprselect:rounding", "Corner rounding radius", (Config::FLOAT) 6.0);
+    g_pRoundingPower = makeShared<CFloatValue>("plugin:hyprselect:rounding_power", "Corner rounding power (squircle factor)", (Config::FLOAT) 2.0);
+    g_pFadeTime      = makeShared<CFloatValue>("plugin:hyprselect:fade_time_ms", "Fade-out duration in milliseconds", (Config::FLOAT) 65.0);
+
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pShouldRound);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pColMain);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pColBorder);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pShouldBlur);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pBlurPower);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pBorderSize);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pRounding);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pRoundingPower);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pFadeTime);
 
     static bool drawSelection = false;
     static Vector2D mouseAtStart;
@@ -276,11 +248,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             }
 
             if (!fadingBoxes.empty()) {
-            	static const auto c_fade_length = ConfigValue<Hyprlang::FLOAT>("plugin:hyprselect:fade_time_ms");
-                
                 for (auto &fbox : fadingBoxes) {
-                    float dt = (float) (get_current_time_in_ms() - fbox.creation_time);  
-                    float scalar = dt / *c_fade_length;
+                    float dt = (float) (get_current_time_in_ms() - fbox.creation_time);
+                    float scalar = dt / g_pFadeTime->value();
                     if (scalar > 1.0) {
                         fbox.done = true;
                         scalar = 1.0;
@@ -361,6 +331,8 @@ void drawRect(CBox box, CHyprColor color, float round, float roundingPower, bool
     rect.color = color;
     rect.round = round;
     rect.roundingPower = roundingPower;
+    rect.blur = blur;
+    rect.blurA = blurA;
     g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(rect));
 }
 
