@@ -102,7 +102,7 @@ void drawSelectionBox(CBox selectionBox, float alpha) {
     }
     auto bbb = selectionBox;
     bbb.expand(1.0); 
-    drawDropShadow(m, 1.0, {0, 0, 0, 0.12f * supressDropShadow * alpha}, rounding, roundingPower, bbb, 7 * m->m_scale, false);
+    drawDropShadow(m, 1.0, {0, 0, 0, 1.12f * supressDropShadow * alpha}, rounding, roundingPower, bbb, 7 * m->m_scale, false);
 
     CHyprColor mainCol = (uint64_t) g_pColMain->value();
     mainCol.a *= alpha;
@@ -287,7 +287,6 @@ class AnyPass : public IPassElement {
 public:
     struct AnyData {
         std::function<void(AnyPass*)> draw = nullptr;
-        CBox box = {};
     };
     AnyData* m_data = nullptr;
 
@@ -299,26 +298,25 @@ public:
         delete m_data;
     }
 
-    virtual void draw(const CRegion& damage) {
-        // here we can draw anything
+    std::vector<UP<IPassElement>> draw() {
         if (m_data->draw) {
             m_data->draw(this);
         }
+        return {};
     }
-    virtual bool needsLiveBlur() {
+
+    bool needsLiveBlur() {
         return false;
     }
-    virtual bool needsPrecomputeBlur() {
+    bool needsPrecomputeBlur() {
         return false;
     }
-    //virtual std::optional<CBox> boundingBox() {
-        //return {};
-    //}
-    ePassElementType type()
-    {
+
+    ePassElementType type() {
         return EK_CUSTOM;
     };
-    virtual const char* passName() {
+
+    const char* passName() {
         return "CAnyPassElement";
     }
 };
@@ -326,14 +324,16 @@ public:
 void drawRect(CBox box, CHyprColor color, float round, float roundingPower, bool blur, float blurA) {
     if (box.h <= 0 || box.w <= 0)
         return;
-    CRectPassElement::SRectData rect;
-    rect.box = box;
-    rect.color = color;
-    rect.round = round;
-    rect.roundingPower = roundingPower;
-    rect.blur = blur;
-    rect.blurA = blurA;
-    g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(rect));
+    AnyPass::AnyData anydata([box, color, blur, blurA, round, roundingPower](AnyPass* pass) {
+        Render::GL::CHyprOpenGLImpl::SRectRenderData rectdata;
+        rectdata.blur = blur;
+        rectdata.blurA = blurA;
+        rectdata.round = round;
+        rectdata.roundingPower = roundingPower;
+        rectdata.xray = false;
+        Render::GL::g_pHyprOpenGL->renderRect(box, CHyprColor(color.r, color.g, color.b, color.a), rectdata);
+    });
+    g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(anydata));
 }
 
 void drawBorder(CBox box, CHyprColor color, float size, float round, float roundingPower, bool blur, float blurA) {
@@ -354,93 +354,95 @@ void drawBorder(CBox box, CHyprColor color, float size, float round, float round
 }
 
 void drawShadowInternal(const CBox& box, int round, float roundingPower, int range, CHyprColor color, float a, bool sharp) {
-    // static auto PSHADOWSHARP = sharp;
-    //
-    // if (box.w < 1 || box.h < 1)
-    //     return;
-    //
-    // g_pHyprOpenGL->blend(true);
-    //
-    // color.a *= a;
-    //
-    // if (PSHADOWSHARP)
-    //     g_pHyprOpenGL->renderRect(box, color, {.round = round, .roundingPower = roundingPower});
-    // else
-    //     g_pHyprOpenGL->renderRoundedShadow(box, round, roundingPower, range, color, 1.F);
+    static auto PSHADOWSHARP = sharp;
+
+    if (box.w < 1 || box.h < 1)
+        return;
+
+    Render::GL::g_pHyprOpenGL->blend(true);
+
+    color.a *= a;
+
+    if (PSHADOWSHARP)
+        Render::GL::g_pHyprOpenGL->renderRect(box, color, {.round = round, .roundingPower = roundingPower});
+    else
+        Render::GL::g_pHyprOpenGL->renderRoundedShadow(box, round, roundingPower, range, color, 1.F);
 }
 
 void drawDropShadow(PHLMONITOR pMonitor, float const& a, CHyprColor b, float ROUNDINGBASE, float ROUNDINGPOWER, CBox fullBox, int range, bool sharp) {
-    g_pHyprRenderer->draw(
-        CRectPassElement::SRectData{
-            .box           = fullBox,
-            .color         = b,
-            .round         = ROUNDINGBASE != 0,
-            .roundingPower = ROUNDINGPOWER,
-        },
-    fullBox);
-    // AnyPass::AnyData anydata([pMonitor, a, b, ROUNDINGBASE, ROUNDINGPOWER, fullBox, range, sharp](AnyPass* pass) {
-    //     CHyprColor m_realShadowColor = CHyprColor(b.r, b.g, b.b, b.a);
-    //     if (g_pCompositor->m_windows.empty())
-    //         return;
-    //     PHLWINDOW fake_window = g_pCompositor->m_windows[0]; // there is a faulty assert that exists that would otherwise be hit without a fake window target
-    //     static auto PSHADOWSIZE = range;
-    //     const auto ROUNDING = ROUNDINGBASE;
-    //     auto allBox = fullBox;
-    //     allBox.expand(PSHADOWSIZE);
-    //     allBox.round();
-    //
-    //     if (fullBox.width < 1 || fullBox.height < 1)
-    //         return; // don't draw invisible shadows
-    //
-    //     g_pHyprOpenGL->scissor(nullptr);
-    //     auto before_window = g_pHyprOpenGL->m_renderData.currentWindow;
-    //     g_pHyprOpenGL->m_renderData.currentWindow = fake_window;
-    //
-    //     // we'll take the liberty of using this as it should not be used rn
-    //     CFramebuffer& alphaFB = g_pHyprOpenGL->m_renderData.pCurrentMonData->mirrorFB;
-    //     CFramebuffer& alphaSwapFB = g_pHyprOpenGL->m_renderData.pCurrentMonData->mirrorSwapFB;
-    //     auto* LASTFB = g_pHyprOpenGL->m_renderData.currentFB;
-    //
-    //     CRegion saveDamage = g_pHyprOpenGL->m_renderData.damage;
-    //
-    //     g_pHyprOpenGL->m_renderData.damage = allBox;
-    //     g_pHyprOpenGL->m_renderData.damage.subtract(fullBox.copy().expand(-ROUNDING)).intersect(saveDamage);
-    //     g_pHyprOpenGL->m_renderData.renderModif.applyToRegion(g_pHyprOpenGL->m_renderData.damage);
-    //
-    //     alphaFB.bind();
-    //
-    //     // build the matte
-    //     // 10-bit formats have dogshit alpha channels, so we have to use the matte to its fullest.
-    //     // first, clear region of interest with black (fully transparent)
-    //     g_pHyprOpenGL->renderRect(allBox, CHyprColor(0, 0, 0, 1), {.round = 0});
-    //
-    //     // render white shadow with the alpha of the shadow color (otherwise we clear with alpha later and shit it to 2 bit)
-    //     drawShadowInternal(allBox, ROUNDING, ROUNDINGPOWER, PSHADOWSIZE, CHyprColor(1, 1, 1, m_realShadowColor.a), a, sharp);
-    //
-    //     // render black window box ("clip")
-    //     int some = (ROUNDING + 1 /* This fixes small pixel gaps. */);
-    //     g_pHyprOpenGL->renderRect(fullBox, CHyprColor(0, 0, 0, 1.0), {.round = some, .roundingPower = ROUNDINGPOWER});
-    //
-    //     alphaSwapFB.bind();
-    //
-    //     // alpha swap just has the shadow color. It will be the "texture" to render.
-    //     g_pHyprOpenGL->renderRect(allBox, m_realShadowColor.stripA(), {.round = 0});
-    //
-    //     LASTFB->bind();
-    //
-    //     CBox monbox = {0, 0, pMonitor->m_transformedSize.x, pMonitor->m_transformedSize.y};
-    //
-    //     g_pHyprOpenGL->pushMonitorTransformEnabled(true);
-    //     g_pHyprOpenGL->setRenderModifEnabled(false);
-    //     g_pHyprOpenGL->renderTextureMatte(alphaSwapFB.getTexture(), monbox, alphaFB);
-    //     g_pHyprOpenGL->setRenderModifEnabled(true);
-    //     g_pHyprOpenGL->popMonitorTransformEnabled();
-    //
-    //     g_pHyprOpenGL->m_renderData.damage = saveDamage;
-    //
-    //     g_pHyprOpenGL->m_renderData.currentWindow = before_window;
-    // });
-    // g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
+    // g_pHyprRenderer->draw(
+    //     CRectPassElement::SRectData{
+    //         .box           = fullBox,
+    //         .color         = b,
+    //         .round         = ROUNDINGBASE != 0,
+    //         .roundingPower = ROUNDINGPOWER,
+    //     },
+    // fullBox);
+    AnyPass::AnyData anydata([pMonitor, a, b, ROUNDINGBASE, ROUNDINGPOWER, fullBox, range, sharp](AnyPass* pass) {
+        // void CHyprOpenGLImpl::renderRoundedShadow(const CBox& box, int round, float roundingPower, int range, const CHyprColor& color, float a) {
+        CHyprColor m_realShadowColor = CHyprColor(b.r, b.g, b.b, b.a);
+        Render::GL::g_pHyprOpenGL->renderRoundedShadow(fullBox, ROUNDINGBASE, ROUNDINGPOWER, range, m_realShadowColor, a);
+        // if (g_pCompositor->m_windows.empty())
+        //     return;
+        // PHLWINDOW fake_window = g_pCompositor->m_windows[0]; // there is a faulty assert that exists that would otherwise be hit without a fake window target
+        // static auto PSHADOWSIZE = range;
+        // const auto ROUNDING = ROUNDINGBASE;
+        // auto allBox = fullBox;
+        // allBox.expand(PSHADOWSIZE);
+        // allBox.round();
+        //
+        // if (fullBox.width < 1 || fullBox.height < 1)
+        //     return; // don't draw invisible shadows
+        //
+        // Render::GL::g_pHyprOpenGL->scissor(nullptr);
+        // auto before_window = g_pHyprRenderer->m_renderData.currentWindow;
+        // g_pHyprRenderer->m_renderData.currentWindow = fake_window;
+        //
+        // // we'll take the liberty of using this as it should not be used rn
+        // CFramebuffer& alphaFB = g_pHyprRenderer->m_renderData.pCurrentMonData->mirrorFB;
+        // CFramebuffer& alphaSwapFB = g_pHyprRenderer->m_renderData.pCurrentMonData->mirrorSwapFB;
+        // auto* LASTFB = g_pHyprOpenGL->m_renderData.currentFB;
+        //
+        // CRegion saveDamage = g_pHyprRenderer->m_renderData.damage;
+        //
+        // g_pHyprRenderer->m_renderData.damage = allBox;
+        // g_pHyprRenderer->m_renderData.damage.subtract(fullBox.copy().expand(-ROUNDING)).intersect(saveDamage);
+        // g_pHyprRenderer->m_renderData.renderModif.applyToRegion(g_pHyprRenderer->m_renderData.damage);
+        //
+        // alphaFB.bind();
+        //
+        // // build the matte
+        // // 10-bit formats have dogshit alpha channels, so we have to use the matte to its fullest.
+        // // first, clear region of interest with black (fully transparent)
+        // Render::GL::g_pHyprOpenGL->renderRect(allBox, CHyprColor(0, 0, 0, 1), {.round = 0});
+        //
+        // // render white shadow with the alpha of the shadow color (otherwise we clear with alpha later and shit it to 2 bit)
+        // drawShadowInternal(allBox, ROUNDING, ROUNDINGPOWER, PSHADOWSIZE, CHyprColor(1, 1, 1, m_realShadowColor.a), a, sharp);
+        //
+        // // render black window box ("clip")
+        // int some = (ROUNDING + 1 /* This fixes small pixel gaps. */);
+        // Render::GL::g_pHyprOpenGL->renderRect(fullBox, CHyprColor(0, 0, 0, 1.0), {.round = some, .roundingPower = ROUNDINGPOWER});
+        //
+        // alphaSwapFB.bind();
+        //
+        // // alpha swap just has the shadow color. It will be the "texture" to render.
+        // Render::GL::g_pHyprOpenGL->renderRect(allBox, m_realShadowColor.stripA(), {.round = 0});
+        //
+        // LASTFB->bind();
+        //
+        // CBox monbox = {0, 0, pMonitor->m_transformedSize.x, pMonitor->m_transformedSize.y};
+        //
+        // g_pHyprRenderer->pushMonitorTransformEnabled(true);
+        // // g_pHyprRenderer->setRenderModifEnabled(false);
+        // Render::GL::g_pHyprOpenGL->renderTextureMatte(alphaSwapFB.getTexture(), monbox, alphaFB);
+        // // g_pHyprRenderer->setRenderModifEnabled(true);
+        // g_pHyprRenderer->popMonitorTransformEnabled();
+        //
+        // g_pHyprRenderer->m_renderData.damage = saveDamage;
+        //
+        // g_pHyprRenderer->m_renderData.currentWindow = before_window;
+    });
+    g_pHyprRenderer->m_renderPass.add(makeUnique<AnyPass>(std::move(anydata)));
 }
 
 
