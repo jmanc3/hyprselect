@@ -18,6 +18,7 @@
 #include <hyprland/src/render/pass/BorderPassElement.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/config/values/ConfigValues.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -164,13 +165,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     static auto mouseButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo &info) {
         auto mouse = g_pInputManager->getMouseCoordsInternal();
-        auto m = g_pCompositor->getMonitorFromCursor();
+        auto m = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
         
         if (e.button == BTN_LEFT) {
             if (e.state) { 
                 bool intersected = false; 
                 { // against clients
-                    auto intersectedWindow = g_pCompositor->vectorToWindowUnified(mouse, Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING);
+                    auto intersectedWindow = Desktop::viewState()->hitTest().windowAt(mouse, Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING);
                     if (intersectedWindow)
                         intersected = true;
                     }
@@ -178,7 +179,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                     for (auto& lsl : m->m_layerSurfaceLayers | std::views::reverse) {
                         Vector2D surfaceCoords;
                         PHLLS pFoundLayerSurface;
-                        auto foundSurface = g_pCompositor->vectorToLayerSurface(mouse, &lsl, &surfaceCoords, &pFoundLayerSurface, false);
+                        auto foundSurface = Desktop::viewState()->hitTest().layerSurfaceAt(mouse, &lsl, &surfaceCoords, &pFoundLayerSurface, false);
                         if (foundSurface) {
                             {
                                 // Guesstimate by the size of the layer if it's wallpaper
@@ -197,7 +198,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                     Vector2D surfaceCoords;
                     PHLLS pFoundLayerSurface;
                     auto foundSurface =
-                        g_pCompositor->vectorToLayerPopupSurface(
+                        Desktop::viewState()->hitTest().layerPopupSurfaceAt(
                             mouse, m, &surfaceCoords, &pFoundLayerSurface);
                     if (foundSurface)
                         intersected = true;
@@ -215,7 +216,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                     fbox.creation_time = get_current_time_in_ms();
                     fadingBoxes.push_back(fbox);
                         
-                    for (auto m : g_pCompositor->m_monitors)
+                    for (auto m : State::monitorState()->monitors())
                         g_pHyprRenderer->damageMonitor(m);
                 }
             }
@@ -372,9 +373,9 @@ void drawShadowInternal(const CBox& box, int round, float roundingPower, int ran
 void drawDropShadow(PHLMONITOR pMonitor, float const& a, CHyprColor b, float ROUNDINGBASE, float ROUNDINGPOWER, CBox fullBox, int range, bool sharp) {
     AnyPass::AnyData anydata([pMonitor, a, b, ROUNDINGBASE, ROUNDINGPOWER, fullBox, range, sharp](AnyPass* pass) {
         CHyprColor m_realShadowColor = CHyprColor(b.r, b.g, b.b, b.a);
-        if (g_pCompositor->m_windows.empty())
+        if (Desktop::windowState()->windows().empty())
             return;
-        PHLWINDOW fake_window = g_pCompositor->m_windows[0]; // there is a faulty assert that exists that would otherwise be hit without a fake window target
+        PHLWINDOW fake_window = Desktop::windowState()->windows()[0]; // there is a faulty assert that exists that would otherwise be hit without a fake window target
         static auto PSHADOWSIZE = range;
         const auto ROUNDING = ROUNDINGBASE;
         auto allBox = fullBox;
