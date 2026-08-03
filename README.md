@@ -1,6 +1,6 @@
-# HyprSelect
+# Hyprselect
 
-HyprSelect adds a desktop selection box to Hyprland, that does absolutely nothing, but is absolutely essential.
+Hyprselect adds a desktop selection box to Hyprland, that can select nothing, but is essential.
 
 ![Image of desktop selection on empty desktop](https://github.com/user-attachments/assets/309bacff-a539-466f-83fa-b92b71dd8567)
 
