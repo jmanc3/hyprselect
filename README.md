@@ -53,6 +53,13 @@ hl.config({
             border_size = -1.0,  -- negative number means automatic
             rounding = 6,
             rounding_power = 2.0,
+
+            shadow {
+                enabled = true,
+                sharp = false,
+                range = 4,
+                color = "rgba(00000008)",
+            }
         }
     }
 })

@@ -1,3 +1,4 @@
+#include <hyprland/src/config/values/types/BoolValue.hpp>
 #include <hyprland/src/helpers/Color.hpp>
 #include <hyprland/src/protocols/types/SurfaceRole.hpp>
 #include <hyprlang.hpp>
@@ -7,6 +8,7 @@
 #define WLR_USE_UNSTABLE
 
 #include <any>
+#include <format>
 #include <chrono>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
@@ -40,6 +42,11 @@ static SP<Config::Values::CFloatValue> g_pBorderSize;
 static SP<Config::Values::CFloatValue> g_pRounding;
 static SP<Config::Values::CFloatValue> g_pRoundingPower;
 static SP<Config::Values::CFloatValue> g_pFadeTime;
+
+static SP<Config::Values::CBoolValue> g_pShadowEnabled;
+static SP<Config::Values::CBoolValue> g_pShadowSharp;
+static SP<Config::Values::CFloatValue> g_pShadowRange;
+static SP<Config::Values::CColorValue> g_pShadowColor;
 
 // Always make box start from top left point
 CBox rect(Vector2D start, Vector2D current) {
@@ -103,7 +110,11 @@ void drawSelectionBox(CBox selectionBox, float alpha) {
     }
     auto bbb = selectionBox;
     bbb.expand(1.0); 
-    drawDropShadow(m, 1.0, {0, 0, 0, 0.03f * supressDropShadow * alpha}, rounding, roundingPower, bbb, 7 * m->m_scale, false);
+    if (g_pShadowEnabled->value()) {
+        auto color = CHyprColor(g_pShadowColor->value());
+        color.a *= supressDropShadow * alpha;
+        drawDropShadow(m, 1.0, color, rounding, roundingPower, bbb, g_pShadowRange->value() * m->m_scale, g_pShadowSharp->value());
+    }
 
     CHyprColor mainCol = (uint64_t) g_pColMain->value();
     mainCol.a *= alpha;
@@ -150,6 +161,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_pRoundingPower = makeShared<CFloatValue>("plugin:hyprselect:rounding_power", "Corner rounding power (squircle factor)", (Config::FLOAT) 2.0);
     g_pFadeTime      = makeShared<CFloatValue>("plugin:hyprselect:fade_time_ms", "Fade-out duration in milliseconds", (Config::FLOAT) 65.0);
 
+    g_pShadowEnabled     = makeShared<CBoolValue>("plugin:hyprselect:shadow:enabled", "", (Config::BOOL) true);
+    g_pShadowSharp       = makeShared<CBoolValue>("plugin:hyprselect:shadow:sharp", "", (Config::BOOL) false);
+    g_pShadowRange       = makeShared<CFloatValue>("plugin:hyprselect:shadow:range", "", (Config::FLOAT) 4);
+    g_pShadowColor       = makeShared<CColorValue>("plugin:hyprselect:shadow:color", "", (Config::INTEGER) CHyprColor(0, 0, 0, .031).getAsHex());
+
     HyprlandAPI::addConfigValueV2(PHANDLE, g_pShouldRound);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_pColMain);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_pColBorder);
@@ -159,6 +175,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValueV2(PHANDLE, g_pRounding);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_pRoundingPower);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_pFadeTime);
+    
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pShadowEnabled);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pShadowSharp);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pShadowRange);
+    HyprlandAPI::addConfigValueV2(PHANDLE, g_pShadowColor);
 
     static bool drawSelection = false;
     static Vector2D mouseAtStart;
@@ -235,8 +256,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         if (drawSelection) {
             auto mouse = g_pInputManager->getMouseCoordsInternal();
             auto selectionBox = rect(mouseAtStart, mouse);
+            auto m = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
+            
             // Raw coords are already correct for damage 'debug:damage_blink = true' to verify
-            selectionBox.expand(10);
+            selectionBox.expand(g_pShadowRange->value() * 1.3 * m->m_scale);
 
             static auto previousBox = selectionBox;
             g_pHyprRenderer->damageBox(selectionBox);
@@ -268,7 +291,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                     drawSelectionBox(fixForRender(m, fbox.box), 1.0 - scalar);
                     
                     auto area = fbox.box;
-                    area.expand(10 * m->m_scale);
+                    area.expand(g_pShadowRange->value() * 1.31 * m->m_scale);
                     g_pHyprRenderer->damageBox(area);
                 }
 
