@@ -210,16 +210,28 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                         PHLLS pFoundLayerSurface;
                         auto foundSurface = Desktop::viewState()->hitTest().layerSurfaceAt(mouse, &lsl, &surfaceCoords, &pFoundLayerSurface, false);
                         if (foundSurface) {
+                            bool wallpaperLikeSize = false;
                             {
                                 // Guesstimate by the size of the layer if it's wallpaper
                                 CBox box = foundSurface->extends();
-                                if (!(std::abs(box.w - m->m_size.x) < 30 && std::abs(box.h - m->m_size.y) < 30)) {
+                                wallpaperLikeSize = (std::abs(box.w - m->m_size.x) < 20 && std::abs(box.h - m->m_size.y) < 20);
+                            }
+                            if (wallpaperLikeSize) {
+                                enum zwlrLayerShellV1Layer : uint32_t {
+                                    ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND = 0,
+                                    ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM = 1,
+                                    ZWLR_LAYER_SHELL_V1_LAYER_TOP = 2,
+                                    ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY = 3,
+                                };
+
+                                // Only background layers don't consume the click
+                                if (pFoundLayerSurface->m_layer != zwlrLayerShellV1Layer::ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND) {
                                     intersected = true;
                                 }
+                            } else {
+                                // a non wallpaperLikeSize'd layer can be something like a dock for instance, which should prevent selection box from starting
+                                intersected = true;
                             }
-                            // Ignore wallpaper layers so desktop drag works with hyprpaper.
-                            //if (!pFoundLayerSurface || pFoundLayerSurface->m_namespace != "hyprpaper")
-                                //intersected = true;
                         }
                     }
                 }
