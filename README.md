@@ -6,6 +6,23 @@ Hyprselect adds a desktop selection box to Hyprland, that can select nothing, bu
 
 ## Installation
 
+Install with `hyprpm`:
+
+```bash
+hyprpm add https://github.com/jmanc3/hyprselect
+hyprpm enable hyprselect
+```
+
+To load the plugin automatically when Hyprland starts, add this to `~/.config/hypr/hyprland.lua`:
+
+```lua
+hl.on("hyprland.start", function()
+    hl.exec_cmd("hyprpm reload -n")
+end)
+```
+
+## Manual Installation
+
 ```bash
 git clone https://github.com/jmanc3/hyprselect
 cd hyprselect
@@ -19,16 +36,6 @@ To auto start it with Hyprland, add the following to `$HOME/.config/hypr/hyprlan
 ```lua
 hl.exec_cmd("sleep 3s; hyprctl plugin load /full/qualified/path/to/hyprselect.so")
 ```
-
-## Manual starting
-
-Or you can load it manually: 
-
-`hyprctl plugin load /full/qualified/path/to/hyprselect.so`.
-
-And unload it with: 
-
-`hyprctl plugin unload /full/qualified/path/to/hyprselect.so`.
 
 ## Config Variables
 
