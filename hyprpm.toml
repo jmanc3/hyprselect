@@ -1,0 +1,12 @@
+[repository]
+name = "hyprselect"
+authors = ["jmanc3"]
+commit_pins = [
+    ["0aa6745f705f2c4b0a5004eb019ef76e5bbdb426", "13e23c625984dd949bfca2a0fe759fa832a8b36d"], # Hyprland 0.57.0
+]
+
+[hyprselect]
+description = "A desktop selection box for Hyprland"
+authors = ["jmanc3"]
+output = "hyprselect.so"
+build = ["make all"]
